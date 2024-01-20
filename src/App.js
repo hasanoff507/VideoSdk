@@ -24,18 +24,46 @@ const App = () => {
 
 function MeetingView() {
   const [joined, setJoined] = useState(null);
-  const { join, participants } = useMeeting({
+  const { join, leave, participants } = useMeeting({
     onMeetingJoined: () => {
       setJoined("JOINED");
     },
   });
 
+  const [cameras, setCameras] = useState([]);
+  const [microphones, setMicrophones] = useState([]);
   const [selectedCamera, setSelectedCamera] = useState(null);
   const [selectedMicrophone, setSelectedMicrophone] = useState(null);
 
-  const joinMeeting = () => {
+  useEffect(() => {
+    async function fetchDevices() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      setCameras(devices.filter(device => device.kind === 'videoinput'));
+      setMicrophones(devices.filter(device => device.kind === 'audioinput'));
+    }
+
+    fetchDevices();
+  }, []);
+
+  const joinMeeting = async () => {
     setJoined("JOINING");
-    join();
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: selectedCamera ? { exact: selectedCamera } : undefined },
+        audio: { deviceId: selectedMicrophone ? { exact: selectedMicrophone } : undefined },
+      });
+
+      join({ mediaStream: stream });
+    } catch (error) {
+      console.error("Error joining the meeting:", error);
+      setJoined("ERROR");
+    }
+  };
+
+  const handleLogout = () => {
+    leave();
+    setJoined(null);
   };
 
   const handleCameraChange = (deviceId) => {
@@ -46,74 +74,56 @@ function MeetingView() {
     setSelectedMicrophone(deviceId);
   };
 
-  useEffect(() => {
-    // Fetch available media devices (cameras and microphones)
-    async function fetchMediaDevices() {
+  const startScreenShare = async () => {
+    if (joined === "JOINED") {
       try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const cameras = devices.filter((device) => device.kind === "videoinput");
-        const microphones = devices.filter(
-          (device) => device.kind === "audioinput"
-        );
-
-        // Populate the camera and microphone select options
-        const cameraSelect = document.getElementById("cameraSelect");
-        const microphoneSelect = document.getElementById("microphoneSelect");
-
-        cameras.forEach((camera) => {
-          const option = document.createElement("option");
-          option.value = camera.deviceId;
-          option.text = camera.label;
-          cameraSelect.appendChild(option);
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true
         });
-
-        microphones.forEach((microphone) => {
-          const option = document.createElement("option");
-          option.value = microphone.deviceId;
-          option.text = microphone.label;
-          microphoneSelect.appendChild(option);
-        });
+        // Implement screen share logic here, depending on your SDK's requirements
       } catch (error) {
-        console.error("Error fetching media devices:", error);
+        console.error("Error sharing screen:", error);
       }
     }
-
-    fetchMediaDevices();
-  }, []);
+  };
 
   return (
     <div className="container">
-      {joined && joined === "JOINED" ? (
+      {joined === "JOINED" ? (
         <div>
+          <button onClick={handleLogout}>Log Out</button>
+          <button onClick={startScreenShare}>Share My Screen</button>
           {[...participants.keys()].map((participantId) => (
             <ParticipantView
               participantId={participantId}
               key={participantId}
-              selectedCamera={selectedCamera}
-              selectedMicrophone={selectedMicrophone}
             />
           ))}
         </div>
-      ) : joined && joined === "JOINING" ? (
+      ) : joined === "JOINING" ? (
         <p>Joining the meeting...</p>
+      ) : joined === "ERROR" ? (
+        <p>Error joining the meeting. Please check your camera and microphone settings.</p>
       ) : (
         <div>
           <button onClick={joinMeeting}>Join the meeting</button>
 
           <h3>Select Camera:</h3>
-          <select
-            id="cameraSelect"
-            onChange={(e) => handleCameraChange(e.target.value)}
-          >
-            <option value={null}>Default Camera</option>
+          <select onChange={(e) => handleCameraChange(e.target.value)}>
+            {cameras.map((camera) => (
+              <option key={camera.deviceId} value={camera.deviceId}>
+                {camera.label || `Camera ${camera.deviceId}`}
+              </option>
+            ))}
           </select>
 
           <h3>Select Microphone:</h3>
-          <select
-            id="microphoneSelect"
-            onChange={(e) => handleMicrophoneChange(e.target.value)}
-          >
-            <option value={null}>Default Microphone</option>
+          <select onChange={(e) => handleMicrophoneChange(e.target.value)}>
+            {microphones.map((mic) => (
+              <option key={mic.deviceId} value={mic.deviceId}>
+                {mic.label || `Microphone ${mic.deviceId}`}
+              </option>
+            ))}
           </select>
         </div>
       )}
@@ -121,14 +131,10 @@ function MeetingView() {
   );
 }
 
-function ParticipantView(props) {
+function ParticipantView({ participantId }) {
   const micRef = useRef(null);
-  const { webcamStream, micStream, webcamOn, micOn, isLocal, displayName } =
-    useParticipant(props.participantId, {
-      cameraDeviceId: props.selectedCamera,
-      microphoneDeviceId: props.selectedMicrophone,
-    });
-    console.log(displayName,'sa');
+  const { webcamStream, micStream, webcamOn, micOn, isLocal, displayName, screenShareStream } = useParticipant(participantId);
+
   const videoStream = useMemo(() => {
     if (webcamOn && webcamStream) {
       const mediaStream = new MediaStream();
@@ -137,18 +143,21 @@ function ParticipantView(props) {
     }
   }, [webcamStream, webcamOn]);
 
+  const screenStream = useMemo(() => {
+    if (screenShareStream) {
+      const mediaStream = new MediaStream();
+      mediaStream.addTrack(screenShareStream.track);
+      return mediaStream;
+    }
+  }, [screenShareStream]);
+
   useEffect(() => {
     if (micRef.current) {
       if (micOn && micStream) {
         const mediaStream = new MediaStream();
         mediaStream.addTrack(micStream.track);
-
         micRef.current.srcObject = mediaStream;
-        micRef.current
-          .play()
-          .catch((error) =>
-            console.error("videoElem.current.play() failed", error)
-          );
+        micRef.current.play().catch((error) => console.error("audioElem.current.play() failed", error));
       } else {
         micRef.current.srcObject = null;
       }
@@ -169,9 +178,19 @@ function ParticipantView(props) {
           url={videoStream}
           height={"300px"}
           width={"300px"}
-          onError={(err) => {
-            console.log(err, "participant video error");
-          }}
+        />
+      )}
+      {screenShareStream && (
+        <ReactPlayer
+          playsinline
+          pip={false}
+          light={false}
+          controls={true}
+          muted={isLocal}
+          playing={true}
+          url={screenStream}
+          width="100%"
+          height="auto"
         />
       )}
     </div>
