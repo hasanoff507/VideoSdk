@@ -15,7 +15,7 @@ const App = () => {
         webcamEnabled: true,
         name: "Siddiq's Org",
       }}
-      token="YOUR_TOKEN_HERE"
+      token="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcGlrZXkiOiIzODZlNjg1NC1iNGUwLTRkMDEtOWVkNi1hYjUwODczMDVkOTgiLCJwZXJtaXNzaW9ucyI6WyJhbGxvd19qb2luIl0sImlhdCI6MTcwNTc1MDY5OCwiZXhwIjoxNzA1ODM3MDk4fQ.Ap0jdhyMIpWgYmBxFiHdGF-Ix2ktASA1NboX66sMP7Y"
     >
       <MeetingView />
     </MeetingProvider>
